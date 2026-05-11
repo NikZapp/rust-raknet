@@ -301,10 +301,12 @@ impl RaknetListener {
                         continue;
                     }
                     PacketID::UnconnectedPing2 => {
+                        raknet_log_debug!("unconn ping 2");
                         match read_packet_ping(&buf[..size]) {
                             Ok(p) => p,
                             Err(_) => continue,
                         };
+                        raknet_log_debug!("decoded");
 
                         let packet = crate::packet::PacketUnconnectedPong {
                             time: cur_timestamp_millis(),
@@ -313,10 +315,12 @@ impl RaknetListener {
                             motd,
                         };
 
+                        raknet_log_debug!("packing new");
                         let pong = match write_packet_pong(&packet) {
                             Ok(p) => p,
                             Err(_) => continue,
                         };
+                        raknet_log_debug!("packed");
 
                         match socket.send_to(&pong, addr).await {
                             Ok(_) => {}
@@ -324,6 +328,7 @@ impl RaknetListener {
                                 raknet_log_error!("udp socket send_to error : {}", e);
                             }
                         };
+                        raknet_log_debug!("sent");
                         continue;
                     }
                     PacketID::OpenConnectionRequest1 => {
