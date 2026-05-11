@@ -302,7 +302,7 @@ impl RaknetListener {
                     }
                     PacketID::UnconnectedPing2 => {
                         raknet_log_debug!("unconn ping 2");
-                        match read_packet_ping(&buf[..size]) {
+                        match read_packet_unconnected_ping(&buf[..size]) {
                             Ok(p) => p,
                             Err(_) => continue,
                         };
