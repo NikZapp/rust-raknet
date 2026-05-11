@@ -212,6 +212,16 @@ pub fn read_packet_ping(buf: &[u8]) -> Result<PacketUnconnectedPing> {
     })
 }
 
+pub fn read_packet_unconnected_ping(buf: &[u8]) -> Result<PacketUnconnectedPing> {
+    let mut cursor = RaknetReader::new(buf.to_vec());
+    unwrap_or_return!(cursor.read_u8());
+    Ok(PacketUnconnectedPing {
+        time: unwrap_or_return!(cursor.read_i64(Endian::Big)),
+        magic: unwrap_or_return!(cursor.read_magic()),
+        guid: 0,
+    })
+}
+
 pub fn write_packet_ping(packet: &PacketUnconnectedPing) -> Result<Vec<u8>> {
     let mut cursor = RaknetWriter::new();
     unwrap_or_return!(cursor.write_u8(PacketID::UnconnectedPing1.to_u8()));
