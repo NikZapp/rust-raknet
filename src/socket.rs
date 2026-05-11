@@ -788,7 +788,7 @@ impl RaknetSocket {
 
     /// Send a packet
     ///
-    /// packet must be `0xfe` as the first byte, using other values of bytes may cause unexpected errors.
+    /// packet must be `0xfe` as the first byte, using other values of bytes may cause unexpected errors. - NO
     ///
     /// Except Reliability::ReliableOrdered, all other reliability packets must be less than MTU - 60 (default 1340 bytes), otherwise RaknetError::PacketSizeExceedMTU will be returned
     ///
@@ -802,9 +802,10 @@ impl RaknetSocket {
             return Err(RaknetError::PacketHeaderError);
         }
 
-        if buf[0] != 0xfe {
-            return Err(RaknetError::PacketHeaderError);
-        }
+        // mcpi is TOO OLD to care about your wrapping paper!!!
+        //if buf[0] != 0xfe {
+        //    return Err(RaknetError::PacketHeaderError);
+        //}
 
         if self.close_notifier.is_closed() {
             return Err(RaknetError::ConnectionClosed);
