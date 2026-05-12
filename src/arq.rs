@@ -1,9 +1,9 @@
 use std::{collections::HashMap, net::SocketAddr};
 
-use crate::{datatype::*, error::*, fragment::FragmentQ, raknet_log_debug, utils::*};
+use crate::{datatype::*, error::*, fragment::FragmentQ, raknet_log_debug, raknet_log_error, utils::*};
 
 /// Enumeration type options for Raknet transport reliability
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Reliability {
     /// Unreliable packets are sent by straight UDP. They may arrive out of order, or not at all. This is best for data that is unimportant, or data that you send very frequently so even if some packets are missed newer packets will compensate.
     /// Advantages - These packets don't need to be acknowledged by the network, saving the size of a UDP header in acknowledgment (about 50 bytes or so). The savings can really add up.
@@ -462,6 +462,7 @@ impl RecvQ {
         self.sequence_number_ackset.insert(frame.sequence_number);
 
         //The fourth parameter takes one of five major values. Lets say you send data 1,2,3,4,5,6. Here's the order and substance of what you might get back:
+        raknet_log_debug!("frame reliability: {:?} is_fragment: {}", frame.reliability(), frame.is_fragment());
         match frame.reliability()? {
             // UNRELIABLE - 5, 1, 6
             Reliability::Unreliable => {
@@ -483,7 +484,14 @@ impl RecvQ {
             }
             // RELIABLE - 5, 1, 4, 6, 2, 3
             Reliability::Reliable => {
-                self.packets.insert(frame.sequence_number, frame);
+                if frame.is_fragment() {
+                    self.fragment_queue.insert(frame);
+                    for i in self.fragment_queue.flush()? {
+                        self.packets.insert(i.sequence_number, i);
+                    }
+                } else {
+                    self.packets.insert(frame.sequence_number, frame);
+                }
             }
             // RELIABLE_ORDERED - 1, 2, 3, 4, 5, 6
             Reliability::ReliableOrdered => {

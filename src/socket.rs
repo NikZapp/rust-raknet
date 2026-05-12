@@ -83,7 +83,7 @@ impl RaknetSocket {
         user_data_sender: &Sender<Vec<u8>>,
         incomming_notify: &Notify,
     ) -> Result<bool> {
-        match PacketID::from(frame.data[0])? {
+        match PacketID::from(frame.data[0]).unwrap_or(PacketID::Game) {
             PacketID::ConnectionRequest => {
                 let packet = read_packet_connection_request(frame.data.as_slice())?;
 
@@ -514,7 +514,7 @@ impl RaknetSocket {
                         recvq.insert(frame).unwrap();
 
                         for f in recvq.flush(&peer_addr) {
-                            if !RaknetSocket::handle(
+                            match RaknetSocket::handle(
                                 &f,
                                 &peer_addr,
                                 &local_addr,
@@ -523,12 +523,17 @@ impl RaknetSocket {
                                 &incomming_notify,
                             )
                             .await
-                            .unwrap()
                             {
-                                raknet_log_info!("handle over");
-                                connected.close();
-                                is_break = true;
-                            };
+                                Ok(false) => {
+                                    raknet_log_info!("handle over");
+                                    connected.close();
+                                    is_break = true;
+                                }
+                                Ok(true) => {}
+                                Err(e) => {
+                                    raknet_log_debug!("handle error: {:?}", e);
+                                }
+                            }
                         }
 
                         if is_break {
