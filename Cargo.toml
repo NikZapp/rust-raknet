@@ -13,6 +13,7 @@ keywords = ["raknet", "networking" , "game"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+arc-swap = "1.9.1"
 bytes = "1.2.1"
 rand = {version = "0.8.5", features = ["std"]}
 tokio = {version = "1.20.1", features = ["full"]}

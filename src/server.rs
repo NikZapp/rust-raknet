@@ -1,23 +1,67 @@
 use std::collections::HashMap;
 use std::{net::SocketAddr, sync::Arc};
+use arc_swap::ArcSwap;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::channel;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{Mutex, Notify, RwLock};
 
 use crate::error::{RaknetError, Result};
 use crate::packet::*;
 use crate::utils::*;
 use crate::{raknet_log_debug, raknet_log_error, socket::*};
 
-const SERVER_NAME: &str = "Rust Raknet Server";
-const MAX_CONNECTION: u32 = 99999;
+//const SERVER_NAME: &str = "Rust Raknet Server";
+//const MAX_CONNECTION: u32 = 99999;
 
 type SessionSender = (i64, Sender<Vec<u8>>);
 
+//#[derive(Clone)]
+pub enum Motd {
+    Static(Arc<RwLock<String>>),
+    Dynamic(ArcSwap<Arc<dyn Fn(SocketAddr) -> String + Send + Sync + 'static>>),
+}
+
+impl Motd {
+    pub async fn get(&self, addr: SocketAddr) -> String {
+        match self {
+            Motd::Static(s) => {
+                s.read().await.clone()
+            },
+
+            Motd::Dynamic(f) => {
+                (f.load())(addr)
+            }
+        }
+    }
+
+    pub async fn set_static(&self, value: String) {
+        if let Motd::Static(s) = self {
+            *s.write().await = value;
+        }
+    }
+
+    pub fn set_dynamic<F>(&mut self, f: F)
+    where
+        F: Fn(SocketAddr) -> String + Send + Sync + 'static,
+    {
+        let f: Arc<dyn Fn(SocketAddr) -> String + Send + Sync> = Arc::new(f);
+        *self = Motd::Dynamic(ArcSwap::new(f.into()));
+    }
+}
+
+impl Clone for Motd {
+    fn clone(&self) -> Self {
+        match self {
+            Motd::Static(s) => Motd::Static(s.clone()),
+            Motd::Dynamic(f) => Motd::Dynamic(ArcSwap::new(f.load_full())),
+        }
+    }
+}
+
 /// Implementation of Raknet Server.
 pub struct RaknetListener {
-    motd: String,
+    motd: Motd,
     socket: Option<Arc<UdpSocket>>,
     guid: u64,
     listened: bool,
@@ -50,7 +94,7 @@ impl RaknetListener {
         let (connection_sender, connection_receiver) = channel::<RaknetSocket>(10);
 
         let ret = Self {
-            motd: String::new(),
+            motd: Motd::Static(Arc::new(RwLock::new(String::new()))),
             socket: Some(Arc::new(s)),
             guid: rand::random(),
             listened: false,
@@ -88,7 +132,7 @@ impl RaknetListener {
         let (connection_sender, connection_receiver) = channel::<RaknetSocket>(10);
 
         let ret = Self {
-            motd: String::new(),
+            motd: Motd::Static(Arc::new(RwLock::new(String::new()))),
             socket: Some(Arc::new(s)),
             guid: rand::random(),
             listened: false,
@@ -208,23 +252,11 @@ impl RaknetListener {
             return;
         }
 
-        if self.motd.is_empty() {
-            self.set_motd(
-                SERVER_NAME,
-                MAX_CONNECTION,
-                "486",
-                "1.18.11",
-                "Survival",
-                self.socket.as_ref().unwrap().local_addr().unwrap().port(),
-            )
-            .await;
-        }
-
         let socket = self.socket.as_ref().unwrap().clone();
         let guid = self.guid;
         let sessions = self.sessions.clone();
         let connection_sender = self.connection_sender.clone();
-        let motd = self.get_motd().await;
+        let motd = self.motd.clone();
 
         self.listened = true;
 
@@ -242,7 +274,7 @@ impl RaknetListener {
             raknet_log_debug!("start listen worker : {}", local_addr);
 
             loop {
-                let motd = motd.clone();
+                //let motd = self.motd.clone();
                 let size: usize;
                 let addr: SocketAddr;
 
@@ -284,7 +316,7 @@ impl RaknetListener {
                             time: cur_timestamp_millis(),
                             guid,
                             magic: true,
-                            motd,
+                            motd: motd.get(addr).await,
                         };
 
                         let pong = match write_packet_pong(&packet) {
@@ -312,7 +344,7 @@ impl RaknetListener {
                             time: cur_timestamp_millis(),
                             guid,
                             magic: true,
-                            motd,
+                            motd: motd.get(addr).await,
                         };
 
                         raknet_log_debug!("packing new");
@@ -527,7 +559,7 @@ impl RaknetListener {
         game_type: &str,
         port: u16,
     ) {
-        self.motd = format!(
+        let motd = format!(
             "MCPE;{};{};{};0;{};{};Bedrock level;{};1;{};",
             server_name,
             mc_protocol_version,
@@ -537,6 +569,7 @@ impl RaknetListener {
             game_type,
             port
         );
+        self.motd.set_static(motd).await;
     }
 
     /// Get the current motd, this motd will be provided to the client in the unconnected pong.
@@ -546,8 +579,8 @@ impl RaknetListener {
     /// let listener = RaknetListener::bind("127.0.0.1:19132".parse().unwrap()).await.unwrap();
     /// let motd = listener.get_motd().await;
     /// ```
-    pub async fn get_motd(&self) -> String {
-        self.motd.clone()
+    pub async fn get_motd(&self, addr: SocketAddr) -> String {
+        self.motd.get(addr).await.clone()
     }
 
     /// Returns the socket address of the local half of this Raknet connection.
@@ -594,8 +627,16 @@ impl RaknetListener {
     /// let mut socket = RaknetListener::bind("127.0.0.1:19132".parse().unwrap()).await.unwrap();
     /// socket.set_full_motd("motd").await;
     /// ```
-    pub fn set_full_motd(&mut self, motd: String) -> Result<()> {
-        self.motd = motd;
+    pub async fn set_full_motd(&mut self, motd: String) -> Result<()> {
+        self.motd.set_static(motd).await;
+        Ok(())
+    }
+
+    pub async fn set_dynamic_motd<F>(&mut self, f: F) -> Result<()>
+    where
+        F: Fn(SocketAddr) -> String + Send + Sync + 'static,
+    {
+        self.motd.set_dynamic(f);
         Ok(())
     }
 
