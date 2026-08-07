@@ -13,6 +13,7 @@ pub enum RaknetError {
     ReadPacketBufferError,
     PacketSizeExceedMTU,
     PacketHeaderError,
+    ConnectionTimeout,
 }
 
 pub type Result<T> = std::result::Result<T, RaknetError>;

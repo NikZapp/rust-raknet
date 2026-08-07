@@ -1,6 +1,6 @@
 use std::{collections::HashMap, net::SocketAddr};
 
-use crate::{datatype::*, error::*, fragment::FragmentQ, raknet_log_debug, raknet_log_error, utils::*};
+use crate::{datatype::*, error::*, fragment::FragmentQ, raknet_log_debug, utils::*};
 
 /// Enumeration type options for Raknet transport reliability
 #[derive(Clone, Debug)]
@@ -462,7 +462,17 @@ impl RecvQ {
         self.sequence_number_ackset.insert(frame.sequence_number);
 
         //The fourth parameter takes one of five major values. Lets say you send data 1,2,3,4,5,6. Here's the order and substance of what you might get back:
-        raknet_log_debug!("frame reliability: {:?} is_fragment: {}", frame.reliability(), frame.is_fragment());
+        //raknet_log_debug!("frame reliability: {:?} is_fragment: {} seqn: {} ofn: {}", frame.reliability(), frame.is_fragment(), frame.sequence_number, frame.ordered_frame_index);
+        raknet_log_debug!(
+            "frame reliability: {:?} is_fragment: {} seqn: {} rfi: {} ofn: {} channel: {} pid: {:#04x}",
+            frame.reliability(),
+            frame.is_fragment(),
+            frame.sequence_number,
+            frame.reliable_frame_index,
+            frame.ordered_frame_index,
+            frame.order_channel,
+            frame.data.first().copied().unwrap_or(0),
+        );
         match frame.reliability()? {
             // UNRELIABLE - 5, 1, 6
             Reliability::Unreliable => {
@@ -487,10 +497,10 @@ impl RecvQ {
                 if frame.is_fragment() {
                     self.fragment_queue.insert(frame);
                     for i in self.fragment_queue.flush()? {
-                        self.packets.insert(i.sequence_number, i);
+                        self.packets.insert(i.reliable_frame_index, i);
                     }
                 } else {
-                    self.packets.insert(frame.sequence_number, frame);
+                    self.packets.insert(frame.reliable_frame_index, frame);
                 }
             }
             // RELIABLE_ORDERED - 1, 2, 3, 4, 5, 6

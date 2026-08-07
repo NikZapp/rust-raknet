@@ -13,8 +13,7 @@ use tokio::{
 };
 
 use crate::{
-    error::{RaknetError, Result},
-    raknet_log_error, raknet_log_info,
+    error::{RaknetError, Result}, raknet_log_error, raknet_log_info,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -191,7 +190,12 @@ impl RaknetSocket {
     /// ```
 
     pub async fn connect(addr: &SocketAddr) -> Result<Self> {
-        Self::connect_with_version(addr, RAKNET_PROTOCOL_VERSION).await
+        const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+        match timeout(CONNECT_TIMEOUT, Self::connect_with_version(addr, RAKNET_PROTOCOL_VERSION)).await {
+            Ok(res) => res,
+            Err(_) => Err(RaknetError::ConnectionTimeout),
+        }
     }
 
     pub async fn connect_with_version(addr: &SocketAddr, raknet_version: u8) -> Result<Self> {
@@ -336,9 +340,9 @@ impl RaknetSocket {
         sendq1.insert(Reliability::ReliableOrdered, &buf)?;
         std::mem::drop(sendq1);
 
-        let (user_data_sender, user_data_receiver) = channel::<Vec<u8>>(100);
+        let (user_data_sender, user_data_receiver) = channel::<Vec<u8>>(4096);
 
-        let (sender, receiver) = channel::<Vec<u8>>(100);
+        let (sender, receiver) = channel::<Vec<u8>>(4096);
 
         let s = Arc::new(s);
 
@@ -346,7 +350,7 @@ impl RaknetSocket {
         let connected = Arc::new(tokio::sync::Semaphore::new(0));
         let connected_s = connected.clone();
         let peer_addr = *addr;
-        tokio::spawn(async move {
+        let recv_handle = tokio::spawn(async move {
             let mut buf = [0u8; 2048];
             loop {
                 if connected_s.is_closed() {
@@ -387,6 +391,8 @@ impl RaknetSocket {
             raknet_log_debug!("{} , recv_from finished", peer_addr);
         });
 
+        let mut guard = AbortGuard(vec![recv_handle]);
+
         let (sender_sender, sender_receiver) = channel::<(Vec<u8>, SocketAddr, bool, u8)>(10);
 
         let ret = RaknetSocket {
@@ -405,14 +411,17 @@ impl RaknetSocket {
             raknet_version,
         };
 
-        ret.start_receiver(&s, receiver, user_data_sender);
-        ret.start_tick(&s, None);
-        ret.start_sender(&s, sender_receiver);
+        let h1 = ret.start_receiver(&s, receiver, user_data_sender);
+        let h2= ret.start_tick(&s, None);
+        let h3 = ret.start_sender(&s, sender_receiver);
+        guard.0.extend([h1, h2, h3]);
+
         ret.drop_watcher().await;
 
         raknet_log_debug!("wait incomming notify");
         ret.incomming_notifier.notified().await;
 
+        guard.disarm();
         Ok(ret)
     }
 
@@ -421,7 +430,7 @@ impl RaknetSocket {
         s: &Arc<UdpSocket>,
         mut receiver: Receiver<Vec<u8>>,
         user_data_sender: Sender<Vec<u8>>,
-    ) {
+    ) -> tokio::task::JoinHandle<()> {
         let connected = self.close_notifier.clone();
         let peer_addr = self.peer_addr;
         let local_addr = self.local_addr;
@@ -451,6 +460,7 @@ impl RaknetSocket {
                     break;
                 }
 
+                //raknet_log_debug!("awaiting packet");
                 let buf = match receiver.recv().await {
                     Some(buf) => buf,
                     None => {
@@ -459,7 +469,7 @@ impl RaknetSocket {
                         break;
                     }
                 };
-
+                //raknet_log_debug!("recv buffer {:?}", buf);
                 last_heartbeat_time.store(cur_timestamp_millis(), Ordering::Relaxed);
 
                 if PacketID::from(buf[0]).unwrap() == PacketID::Disconnect {
@@ -567,14 +577,14 @@ impl RaknetSocket {
             }
 
             raknet_log_debug!("{} , receiver finished", peer_addr);
-        });
+        })
     }
 
     fn start_sender(
         &self,
         s: &Arc<UdpSocket>,
         mut receiver: Receiver<(Vec<u8>, SocketAddr, bool, u8)>,
-    ) {
+    ) -> tokio::task::JoinHandle<()> {
         let connected = self.close_notifier.clone();
         let s = s.clone();
         tokio::spawn(async move {
@@ -605,10 +615,10 @@ impl RaknetSocket {
             }
 
             raknet_log_debug!("sender worker closed");
-        });
+        })
     }
 
-    fn start_tick(&self, s: &Arc<UdpSocket>, collecter: Option<Arc<Mutex<Sender<SocketAddr>>>>) {
+    fn start_tick(&self, s: &Arc<UdpSocket>, collecter: Option<Arc<Mutex<Sender<SocketAddr>>>>) -> tokio::task::JoinHandle<()> {
         let connected = self.close_notifier.clone();
         let s = s.clone();
         let peer_addr = self.peer_addr;
@@ -713,7 +723,7 @@ impl RaknetSocket {
                 None => {}
             }
             raknet_log_debug!("{} , ticker finished", peer_addr);
-        });
+        })
     }
 
     /// Close Raknet Socket.

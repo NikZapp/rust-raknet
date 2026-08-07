@@ -23,3 +23,22 @@ pub fn _is_timeout(time: i64, timeout: u64) -> bool {
     let cur = cur_timestamp_millis();
     cur >= time + timeout as i64
 }
+
+pub struct AbortGuard (
+    pub Vec<tokio::task::JoinHandle<()>>,
+);
+
+impl AbortGuard {
+    pub fn disarm(&mut self) {
+        self.0.clear();
+    }
+}
+
+impl Drop for AbortGuard {
+    fn drop(&mut self) {
+        for handle in &self.0 {
+            handle.abort();
+        }
+        println!("Dropping handles in AbortGuard!");
+    }
+}
