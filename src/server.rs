@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::{Future, ready};
+use std::pin::Pin;
 use std::{net::SocketAddr, sync::Arc};
 use arc_swap::ArcSwap;
 use tokio::net::UdpSocket;
@@ -17,20 +19,22 @@ use crate::{raknet_log_debug, raknet_log_error, socket::*};
 type SessionSender = (i64, Sender<Vec<u8>>);
 
 //#[derive(Clone)]
+
+// something cursed
+pub type MotdFuture = Pin<Box<dyn Future<Output = String> + Send>>;
+pub type MotdFn = dyn Fn(SocketAddr) -> MotdFuture + Send + Sync + 'static;
 pub enum Motd {
     Static(Arc<RwLock<String>>),
-    Dynamic(ArcSwap<Arc<dyn Fn(SocketAddr) -> String + Send + Sync + 'static>>),
+    Dynamic(ArcSwap<Arc<MotdFn>>),
 }
 
 impl Motd {
     pub async fn get(&self, addr: SocketAddr) -> String {
         match self {
-            Motd::Static(s) => {
-                s.read().await.clone()
-            },
-
+            Motd::Static(s) => s.read().await.clone(),
             Motd::Dynamic(f) => {
-                (f.load())(addr)
+                let func: Arc<MotdFn> = Arc::clone(&f.load());
+                func(addr).await
             }
         }
     }
@@ -41,12 +45,13 @@ impl Motd {
         }
     }
 
-    pub fn set_dynamic<F>(&mut self, f: F)
+    pub fn set_dynamic<F, Fut>(&mut self, f: F)
     where
-        F: Fn(SocketAddr) -> String + Send + Sync + 'static,
+        F: Fn(SocketAddr) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = String> + Send + 'static,
     {
-        let f: Arc<dyn Fn(SocketAddr) -> String + Send + Sync> = Arc::new(f);
-        *self = Motd::Dynamic(ArcSwap::new(f.into()));
+        let f: Arc<MotdFn> = Arc::new(move |addr| Box::pin(f(addr)) as MotdFuture);
+        *self = Motd::Dynamic(ArcSwap::from_pointee(f));
     }
 }
 
@@ -632,13 +637,15 @@ impl RaknetListener {
         Ok(())
     }
 
-    pub async fn set_dynamic_motd<F>(&mut self, f: F) -> Result<()>
+    pub async fn set_dynamic_motd<F, Fut>(&mut self, f: F) -> Result<()>
     where
-        F: Fn(SocketAddr) -> String + Send + Sync + 'static,
+        F: Fn(SocketAddr) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = String> + Send + 'static,
     {
         self.motd.set_dynamic(f);
         Ok(())
     }
+    
 
     pub async fn get_peer_raknet_version(&self, peer: &SocketAddr) -> Result<u8> {
         let version_map = self.version_map.lock().await;

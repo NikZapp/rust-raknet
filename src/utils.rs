@@ -39,6 +39,5 @@ impl Drop for AbortGuard {
         for handle in &self.0 {
             handle.abort();
         }
-        println!("Dropping handles in AbortGuard!");
     }
 }
