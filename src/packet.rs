@@ -105,6 +105,7 @@ pub struct ConnectedPing {
 #[derive(Clone)]
 pub struct PacketUnconnectedPing {
     pub time: i64,
+    #[allow(dead_code)]
     pub magic: bool,
     pub guid: u64,
 }
@@ -113,6 +114,7 @@ pub struct PacketUnconnectedPing {
 pub struct PacketUnconnectedPong {
     pub time: i64,
     pub guid: u64,
+    #[allow(dead_code)]
     pub magic: bool,
     pub motd: String,
 }
@@ -125,6 +127,7 @@ pub struct ConnectedPong {
 
 #[derive(Clone)]
 pub struct OpenConnectionRequest1 {
+    #[allow(dead_code)]
     pub magic: bool,
     pub protocol_version: u8,
     pub mtu_size: u16,
@@ -132,6 +135,7 @@ pub struct OpenConnectionRequest1 {
 
 #[derive(Clone)]
 pub struct OpenConnectionRequest2 {
+    #[allow(dead_code)]
     pub magic: bool,
     pub address: std::net::SocketAddr,
     pub mtu: u16,
@@ -140,6 +144,7 @@ pub struct OpenConnectionRequest2 {
 
 #[derive(Clone)]
 pub struct OpenConnectionReply1 {
+    #[allow(dead_code)]
     pub magic: bool,
     pub guid: u64,
     pub use_encryption: u8,
@@ -148,6 +153,7 @@ pub struct OpenConnectionReply1 {
 
 #[derive(Clone)]
 pub struct OpenConnectionReply2 {
+    #[allow(dead_code)]
     pub magic: bool,
     pub guid: u64,
     pub address: std::net::SocketAddr,
@@ -180,12 +186,14 @@ pub struct NewIncomingConnection {
 #[derive(Clone)]
 pub struct IncompatibleProtocolVersion {
     pub server_protocol: u8,
+    #[allow(dead_code)]
     pub magic: bool,
     pub server_guid: u64,
 }
 
 #[derive(Clone)]
 pub struct AlreadyConnected {
+    #[allow(dead_code)]
     pub magic: bool,
     pub guid: u64,
 }

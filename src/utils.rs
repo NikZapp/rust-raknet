@@ -24,9 +24,7 @@ pub fn _is_timeout(time: i64, timeout: u64) -> bool {
     cur >= time + timeout as i64
 }
 
-pub struct AbortGuard (
-    pub Vec<tokio::task::JoinHandle<()>>,
-);
+pub struct AbortGuard(pub Vec<tokio::task::JoinHandle<()>>);
 
 impl AbortGuard {
     pub fn disarm(&mut self) {

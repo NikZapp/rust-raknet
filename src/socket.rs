@@ -13,7 +13,8 @@ use tokio::{
 };
 
 use crate::{
-    error::{RaknetError, Result}, raknet_log_error, raknet_log_info,
+    error::{RaknetError, Result},
+    raknet_log_error, raknet_log_info,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -192,7 +193,12 @@ impl RaknetSocket {
     pub async fn connect(addr: &SocketAddr) -> Result<Self> {
         const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-        match timeout(CONNECT_TIMEOUT, Self::connect_with_version(addr, RAKNET_PROTOCOL_VERSION)).await {
+        match timeout(
+            CONNECT_TIMEOUT,
+            Self::connect_with_version(addr, RAKNET_PROTOCOL_VERSION),
+        )
+        .await
+        {
             Ok(res) => res,
             Err(_) => Err(RaknetError::ConnectionTimeout),
         }
@@ -412,7 +418,7 @@ impl RaknetSocket {
         };
 
         let h1 = ret.start_receiver(&s, receiver, user_data_sender);
-        let h2= ret.start_tick(&s, None);
+        let h2 = ret.start_tick(&s, None);
         let h3 = ret.start_sender(&s, sender_receiver);
         guard.0.extend([h1, h2, h3]);
 
@@ -618,7 +624,11 @@ impl RaknetSocket {
         })
     }
 
-    fn start_tick(&self, s: &Arc<UdpSocket>, collecter: Option<Arc<Mutex<Sender<SocketAddr>>>>) -> tokio::task::JoinHandle<()> {
+    fn start_tick(
+        &self,
+        s: &Arc<UdpSocket>,
+        collecter: Option<Arc<Mutex<Sender<SocketAddr>>>>,
+    ) -> tokio::task::JoinHandle<()> {
         let connected = self.close_notifier.clone();
         let s = s.clone();
         let peer_addr = self.peer_addr;

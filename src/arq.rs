@@ -53,6 +53,7 @@ const CONTINUOUS_SEND_FLAG: u8 = 0x8;
 
 #[derive(Clone)]
 pub struct FrameSetPacket {
+    #[allow(dead_code)]
     pub id: u8,
     pub sequence_number: u32,
     pub flags: u8,

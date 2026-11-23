@@ -1,8 +1,8 @@
+use arc_swap::ArcSwap;
 use std::collections::HashMap;
-use std::future::{Future, ready};
+use std::future::Future;
 use std::pin::Pin;
 use std::{net::SocketAddr, sync::Arc};
-use arc_swap::ArcSwap;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::channel;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -645,7 +645,6 @@ impl RaknetListener {
         self.motd.set_dynamic(f);
         Ok(())
     }
-    
 
     pub async fn get_peer_raknet_version(&self, peer: &SocketAddr) -> Result<u8> {
         let version_map = self.version_map.lock().await;
